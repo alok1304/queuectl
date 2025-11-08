@@ -80,6 +80,7 @@ queuectl/
 - Workers update DB with job status.
 
 ---
+
 ## 📦 Installation
 
 ### 🔹 Clone the Repository
@@ -87,11 +88,39 @@ queuectl/
 git clone https://github.com/alok1304/queuectl
 cd queuectl
 ```
+---
 
-### 🔹 Install (Editable mode)
+### 🔹 (Optional but Recommended) Create & Activate Virtual Environment
+
+#### ✅ Create venv
 ```sh
-pip install -e .   # install in editable mode
+python -m venv venv
 ```
+
+#### ✅ Activate venv  
+**Windows**
+```sh
+venv\Scripts\activate
+```
+
+**macOS / Linux**
+```sh
+source venv/bin/activate
+```
+---
+
+### 🔹 Install Dependencies
+```sh
+pip install -r requirements.txt
+```
+---
+
+### 🔹 Install QueueCTL in Editable Mode
+```sh
+pip install -e .
+```
+> 💡 With editable mode (`-e`), any code changes reflect instantly.
+
 
 ---
 ## 🚀 Usage
