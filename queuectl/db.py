@@ -48,6 +48,7 @@ def init_db() -> None:
             state TEXT NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             max_retries INTEGER NOT NULL DEFAULT 3,
+            priority INTEGER NOT NULL DEFAULT 5,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             next_run_at TEXT,

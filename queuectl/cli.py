@@ -55,9 +55,13 @@ def config_show():
 
 @app.command("enqueue")
 def enqueue(
-    job_id: str = typer.Option(None, "--id", "-i", help="Job ID"),
-    command: str = typer.Option(None, "--cmd", "-c", help="Command to run"),
-    file: str = typer.Option(None, "--file", "-f", help="JSON file with job payload"),
+    job_id: str = typer.Option(None, "--id", "-i"),
+    command: str = typer.Option(None, "--cmd", "-c"),
+    file: str = typer.Option(None, "--file", "-f"),
+    max_retries: int | None = typer.Option(None, "--max-retries", "-r"),
+    priority: int = typer.Option(5, "--priority", "-p", help="Lower number = higher priority (default = 5)"),
+    run_at: str = typer.Option(None, "--run-at", help="Schedule timestamp (YYYY-MM-DD HH:MM:SS)"),
+    delay: int = typer.Option(None, "--delay", help="Delay execution in seconds"),
 ):
     from .enqueue import enqueue_job
     import json, os
@@ -71,7 +75,8 @@ def enqueue(
     if not job_id or not command:
         console.print("[red]Either --file OR (--id AND --cmd) must be provided.[/]")
         raise typer.Exit(1)
-    enqueue_job(json.dumps({"id": job_id, "command": command}))
+    enqueue_job(json.dumps({"id": job_id, "command": command}), max_retries=max_retries, priority=priority, run_at=run_at, delay=delay)
+
 
 # ---------------------------
 # worker group

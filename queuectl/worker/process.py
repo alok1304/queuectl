@@ -85,7 +85,7 @@ def _claim_next_job(conn: sqlite3.Connection, worker_id: str, lease_seconds: int
             (state IN (?, ?) AND (next_run_at IS NULL OR next_run_at <= ?))
             OR
             (state = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
-        ORDER BY created_at ASC
+        ORDER BY priority ASC, created_at ASC
         LIMIT 1
         """,
         (JobState.PENDING, JobState.FAILED, now_iso, JobState.PROCESSING, now_iso),
