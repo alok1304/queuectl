@@ -4,6 +4,8 @@
 
 Built as a backend engineering assignment with **production‑readable architecture**.
 
+[DEMO VIDEO LINK](https://drive.google.com/file/d/13S3Qd1ybW9pQXGzK0N7b6Lx1n58Teju9/view?usp=sharing)
+
 ---
 ## ✨ Features
 - ✅ Enqueue jobs via CLI (`echo`, `sleep`, Python scripts, etc.)
@@ -65,13 +67,13 @@ queuectl/
 ## 🏗 Architecture Diagram
 ```
 ┌──────────────┐     enqueue job      ┌──────────────┐
-│ queuectl CLI │ ───────────────────▶ │ SQLite (DB)  │
+│ queuectl CLI │ ───────────────────▶ │ SQLite (DB)  |
 └──────┬───────┘                      └──────┬───────┘
        │   worker polling (pending jobs)     │
-       │                                      │
-┌──────▼────────┐  executes cmd   ┌──────────▼─────────┐
-│ Worker Process │──────────────▶ │ OS Shell / Command │
-└───────────────┘                 └────────────────────┘
+       │                                     │
+┌──────▼────────┐  executes cmd    ┌──────────▼─────────┐
+│ Worker Process│──────────────▶  │ OS Shell / Command │
+└───────────────┘                  └────────────────────┘
 ```
 
 - Uses safe **atomic job claiming** to prevent duplicate processing.
@@ -314,4 +316,7 @@ This script meets the requirement: **“At least minimal testing or script to va
 
 ### Author
 **Alok Kumar** 
+
+
+
 
