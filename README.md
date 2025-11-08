@@ -274,28 +274,38 @@ This verifies:
 
 Example output:
 ```
+=== QueueCTL Demo Flow ===
+
 1) Enqueue jobs
-Job enqueued: succeed1
-Job enqueued: fail1
+Job enqueued: succeed1  (priority=5, next_run_at=2025-11-08 06:14:21, retries=3)
+Job enqueued: fail1     (priority=5, next_run_at=2025-11-08 06:14:22, retries=3)
 
 2) Start workers
 Picked job: succeed1 | cmd: echo JobSuccess
 ✅ completed: succeed1
+
 Picked job: fail1 | cmd: cmd /c exit 1
-❌ failed attempt 1; retry at ...
+❌ failed attempt 1; retry at 2025-11-08 06:14:25 (2025-11-08 11:44:25 IST)
+
+Picked job: fail1 | cmd: cmd /c exit 1
+❌ failed attempt 2; retry at 2025-11-08 06:14:29 (2025-11-08 11:44:29 IST)
+
+Picked job: fail1 | cmd: cmd /c exit 1
+🟥 DLQ: fail1 (attempts 3)
 
 3) Status
 completed: 1
-failed: 1
+dead: 1
 
 4) DLQ
-(no rows)
+fail1 (1 attempt, error saved)
 
-5) Retry DLQ
+5) Retry DLQ jobs
 ✅ Job fail1 moved back to queue
 
 6) Stop workers
 stop flag detected → exiting when idle
+
 ```
 
 This script meets the requirement: **“At least minimal testing or script to validate core flows.”**
