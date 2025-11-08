@@ -35,6 +35,10 @@ def status():
     now = datetime.now(timezone.utc)
     for w in workers:
         last = datetime.fromisoformat(w["last_heartbeat_at"])
+
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+
         age = int((now - last).total_seconds())
         worker_table.add_row(w["id"], str(age))
 

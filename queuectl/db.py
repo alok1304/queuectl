@@ -50,7 +50,7 @@ def init_db() -> None:
             max_retries INTEGER NOT NULL DEFAULT 3,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            next_run_at TEXT NOT NULL,
+            next_run_at TEXT,
             last_error TEXT,
             worker_id TEXT,
             lease_expires_at TEXT

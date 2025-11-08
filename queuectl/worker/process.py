@@ -16,12 +16,44 @@ from .executor import run_command
 console = Console()
 
 
+# -----------------------
+# Time helpers (store UTC, SQLite-friendly)
+# -----------------------
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
+    # naive UTC (no tzinfo) for consistent strftime below
+    return datetime.utcnow()
 
 def _iso(dt: datetime) -> str:
-    return dt.replace(microsecond=0).isoformat()
+    # Store as UTC "YYYY-MM-DD HH:MM:SS" so SQLite text compare works
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def _parse_db_ts(ts: str) -> datetime:
+    """Parse timestamps we may encounter in DB:
+    - 'YYYY-MM-DD HH:MM:SS'  (our current storage, treated as UTC)
+    - 'YYYY-MM-DDTHH:MM:SS+00:00' (older rows)
+    - '...Z' (rare older rows)
+    Returns an aware datetime in UTC.
+    """
+    if ts is None:
+        return None  # caller should handle
+    try:
+        if "T" in ts:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return dt.astimezone(timezone.utc)
+        # plain format (UTC)
+        dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        # Fallback: treat as now to avoid stalling
+        return _utcnow().replace(tzinfo=timezone.utc)
+
+def _to_ist(ts: str) -> str:
+    """Convert DB timestamp string (UTC) to IST string for display only."""
+    if ts is None:
+        return "—"
+    dt_utc = _parse_db_ts(ts)
+    ist = dt_utc.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    return ist.strftime("%Y-%m-%d %H:%M:%S IST")
 
 
 def _intcfg(key: str, default: int) -> int:
@@ -32,48 +64,70 @@ def _intcfg(key: str, default: int) -> int:
         return default
 
 
+# -----------------------
+# Claim next job
+# -----------------------
 def _claim_next_job(conn: sqlite3.Connection, worker_id: str, lease_seconds: int) -> Optional[sqlite3.Row]:
-    """Atomically claim the next eligible pending job.
-    Strategy: pick one id then conditional-update. Return the row if claimed.
+    """Atomically claim the next eligible job.
+    Eligible if:
+      - state IN (pending, failed) AND (next_run_at IS NULL OR next_run_at <= now)
+      - OR state = processing AND (lease_expires_at IS NULL OR lease_expires_at <= now)  (stale lease)
     """
     now_iso = _iso(_utcnow())
     cur = conn.cursor()
     conn.execute("BEGIN IMMEDIATE")
+
     row = cur.execute(
         """
-        SELECT id FROM jobs
+        SELECT id
+        FROM jobs
         WHERE
-            (state = ? AND next_run_at <= ?) OR
-            (state = ? AND lease_expires_at <= ?)
+            (state IN (?, ?) AND (next_run_at IS NULL OR next_run_at <= ?))
+            OR
+            (state = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
         ORDER BY created_at ASC
         LIMIT 1
         """,
-        (JobState.PENDING, now_iso, JobState.PROCESSING, now_iso),
+        (JobState.PENDING, JobState.FAILED, now_iso, JobState.PROCESSING, now_iso),
     ).fetchone()
+
     if not row:
         conn.commit()
         return None
 
     job_id = row[0]
     lease_expires = _iso(_utcnow() + timedelta(seconds=lease_seconds))
+
     updated = cur.execute(
         """
         UPDATE jobs
-        SET state=?, worker_id=?, lease_expires_at=?, updated_at=?
-        WHERE id=? AND state=? AND next_run_at<=?
+        SET state = ?, worker_id = ?, lease_expires_at = ?, updated_at = ?
+        WHERE id = ?
+          AND (
+                (state IN (?, ?) AND (next_run_at IS NULL OR next_run_at <= ?))
+                OR
+                (state = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?))
+              )
         """,
-        (JobState.PROCESSING, worker_id, lease_expires, now_iso, job_id, JobState.PENDING, now_iso),
+        (
+            JobState.PROCESSING, worker_id, lease_expires, now_iso, job_id,
+            JobState.PENDING, JobState.FAILED, now_iso,
+            JobState.PROCESSING, now_iso,
+        ),
     )
+
     if updated.rowcount != 1:
         conn.commit()
         return None
 
-    # Fetch the full job row
     job = cur.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     conn.commit()
     return job
 
 
+# -----------------------
+# Job state updates
+# -----------------------
 def _complete_job(conn: sqlite3.Connection, job_id: str):
     now_iso = _iso(_utcnow())
     conn.execute(
@@ -95,13 +149,18 @@ def _fail_or_retry_job(conn: sqlite3.Connection, job: sqlite3.Row, stderr: str):
     delay = min(backoff_base ** attempts, max_backoff_seconds)
     next_run_at = _iso(now + timedelta(seconds=delay))
 
-    if attempts > max_retries:
-        # Move to DLQ (dead)
+    # Decide new state and next_run_at
+    if attempts >= max_retries:
         state = JobState.DEAD
-        next_run_at_val = job["next_run_at"]  # irrelevant
+        next_run_at_val = None  # allow NULL in schema
     else:
         state = JobState.FAILED
         next_run_at_val = next_run_at
+
+    # Default message if command produced no output
+    msg = (stderr or "").strip()
+    if not msg:
+        msg = "Command failed (no output)"
 
     conn.execute(
         """
@@ -109,10 +168,10 @@ def _fail_or_retry_job(conn: sqlite3.Connection, job: sqlite3.Row, stderr: str):
         SET state=?, attempts=?, next_run_at=?, last_error=?, updated_at=?, worker_id=NULL, lease_expires_at=NULL
         WHERE id=?
         """,
-        (state, attempts, next_run_at_val, (stderr or "").strip()[:4000], now_iso, job["id"]),
+        (state, attempts, next_run_at_val, msg[:4000], now_iso, job["id"]),
     )
     conn.commit()
-    return state, attempts, next_run_at
+    return state, attempts, next_run_at_val
 
 
 def _heartbeat(conn: sqlite3.Connection, worker_id: str, hostname: str, pid: int):
@@ -128,6 +187,9 @@ def _heartbeat(conn: sqlite3.Connection, worker_id: str, hostname: str, pid: int
     conn.commit()
 
 
+# -----------------------
+# Main worker loop
+# -----------------------
 def worker_loop(stop_flag_path: str):
     worker_id = make_worker_id()
     hostname = os.uname().nodename if hasattr(os, "uname") else "win"
@@ -142,7 +204,7 @@ def worker_loop(stop_flag_path: str):
 
     try:
         while True:
-            # external graceful stop
+            # graceful stop
             if os.path.exists(stop_flag_path):
                 console.log(f"[{worker_id}] stop flag detected → exiting when idle")
                 break
@@ -168,17 +230,19 @@ def worker_loop(stop_flag_path: str):
                     if state == JobState.DEAD:
                         console.log(f"[{worker_id}]  DLQ: {job_id} (attempts {attempts})")
                     else:
-                        console.log(f"[{worker_id}]  failed attempt {attempts}; retry at {next_run_at}")
+                        # show UTC stored ts + IST display
+                        ist_display = _to_ist(next_run_at)
+                        console.log(f"[{worker_id}]  failed attempt {attempts}; retry at {next_run_at} ({ist_display})")
             except Exception as e:
-                # Treat unexpected exceptions as failures, record message
                 state, attempts, next_run_at = _fail_or_retry_job(conn, job, str(e))
                 if state == JobState.DEAD:
                     console.log(f"[{worker_id}]  DLQ (exception): {job_id} (attempts {attempts})")
                 else:
-                    console.log(f"[{worker_id}]  exception; retry at {next_run_at}")
+                    ist_display = _to_ist(next_run_at)
+                    console.log(f"[{worker_id}]  exception; retry at {next_run_at} ({ist_display})")
 
     finally:
-        # Best-effort final heartbeat so status can show recent activity
+        # Best-effort final heartbeat
         try:
             _heartbeat(conn, worker_id, hostname, pid)
         except Exception:

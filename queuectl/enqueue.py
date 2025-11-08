@@ -3,8 +3,11 @@ from rich.console import Console
 from .db import get_connection
 from .models import Job
 from .util.time import utcnow_iso
+from datetime import datetime
 
 console = Console()
+def _ts():
+    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def enqueue_job(payload: str):
@@ -22,21 +25,23 @@ def enqueue_job(payload: str):
 
     conn = get_connection()
     try:
+        now_ts = _ts()
+
         conn.execute(
             """
             INSERT INTO jobs(id, command, state, attempts, max_retries,
-                created_at, updated_at, next_run_at)
+                            created_at, updated_at, next_run_at)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
                 job.command,
-                job.state,
-                job.attempts,
+                "pending",
+                0,
                 job.max_retries,
-                job.created_at,
-                utcnow_iso(),
-                job.next_run_at,
+                now_ts,
+                now_ts,
+                now_ts,   # ✅ this ensures worker picks job immediately
             ),
         )
         conn.commit()
