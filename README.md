@@ -4,8 +4,7 @@
 
 Built as a backend engineering assignment with **production‑readable architecture**.
 
-### DEMO VIDEO LINK: 
-[https://drive.google.com/drive/u/0/folders/1_0eVr0pFEaZTzo71mrmC67pEo71T2K3E](https://drive.google.com/file/d/13S3Qd1ybW9pQXGzK0N7b6Lx1n58Teju9/view?usp=sharing)
+[DEMO VIDEO LINK](https://drive.google.com/file/d/13S3Qd1ybW9pQXGzK0N7b6Lx1n58Teju9/view?usp=sharing)
 
 ---
 ## ✨ Features
@@ -317,6 +316,7 @@ This script meets the requirement: **“At least minimal testing or script to va
 
 ### Author
 **Alok Kumar** 
+
 
 
 
